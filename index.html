@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+  <style>
+    :root { --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom); }
+    html, body { margin: 0; padding: 0; height: 100%; background-color: #f8fafc; overflow: hidden; }
+    body { font-family: -apple-system, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; display: flex; flex-direction: column; }
+    
+    #app-viewport { display: flex; flex-direction: column; height: 100vh; width: 100%; position: relative; }
+    
+    /* Smooth Scroll Container */
+    .scroll-container { 
+      flex: 1 1 auto; 
+      overflow-y: auto; 
+      -webkit-overflow-scrolling: touch; 
+      padding-bottom: calc(100px + var(--sab)); 
+      touch-action: pan-y; 
+    }
+    
+    body.modal-open { overflow: hidden; }
+    .tab-active { color: #4f46e5; border-bottom: 3px solid #4f46e5; }
+    
+    header { 
+      padding-top: max(1rem, var(--sat)); 
+      flex-shrink: 0; 
+      background: white; 
+      position: sticky; 
+      top: 0; 
+      z-index: 30; 
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    /* Modal Styling */
+    .modal-overlay { 
+      position: fixed; 
+      inset: 0; 
+      z-index: 100; 
+      display: flex; 
+      flex-direction: column; 
+      justify-content: flex-end; 
+      background-color: rgba(15, 23, 42, 0.6); 
+      backdrop-filter: blur(4px); 
+    }
+    .modal-content { 
+      max-height: 90vh; 
+      overflow-y: auto; 
+      background: white; 
+      border-radius: 2.5rem 2.5rem 0 0; 
+      padding: 1.5rem 1.5rem calc(2rem + var(--sab)) 1.5rem; 
+    }
+
+    /* PIN Dot animations */
+    .pin-dot { transition: all 0.2s ease; }
+    .pin-dot.active { background-color: #f8fafc; border-color: #6366f1; transform: scale(1.1); }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+  <!-- SECURITY LAYER -->
+  <div id="pin-screen" class="fixed inset-0 bg-slate-900 z-[1000] flex flex-col items-center justify-center p-10 text-white">
+    <h2 class="text-xl font-bold mb-8 text-slate-300 tracking-tight">Finance Lock</h2>
+    <div class="flex gap-4 mb-12">
+      <div id="dot-1" class="pin-dot w-4 h-4 rounded-full border-2 border-slate-600"></div>
+      <div id="dot-2" class="pin-dot w-4 h-4 rounded-full border-2 border-slate-600"></div>
+      <div id="dot-3" class="pin-dot w-4 h-4 rounded-full border-2 border-slate-600"></div>
+      <div id="dot-4" class="pin-dot w-4 h-4 rounded-full border-2 border-slate-600"></div>
+    </div>
+    <div id="numpad-grid" class="grid grid-cols-3 gap-6"></div>
+  </div>
+
+  <!-- MAIN APP VIEWPORT -->
+  <div id="app-viewport">
+    <header class="px-5 pb-2">
+      <div class="flex justify-between items-center mb-3">
+        <h1 class="text-xl font-black tracking-tight">PocketTrack</h1>
+        <div class="flex gap-2">
+          <select id="periodFilter" onchange="load()" class="text-[10px] font-black uppercase text-slate-500 bg-slate-100 px-2 py-1.5 rounded-lg border-none outline-none">
+            <!-- Populated via JS -->
+          </select>
+          <button onclick="editBudget()" class="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg">Budget ₹</button>
+        </div>
+      </div>
+      <div class="flex gap-6 mt-2">
+        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="pb-2 text-sm font-bold tab-active">Dashboard</button>
+        <button onclick="switchTab('reminders')" id="tab-reminders" class="pb-2 text-sm font-bold text-slate-400">Reminders</button>
+      </div>
+    </header>
+
+    <div id="app-content" class="hidden flex-1 flex flex-col min-h-0">
+      <!-- DASHBOARD VIEW -->
+      <main id="view-dashboard" class="scroll-container">
+        <div class="p-5 space-y-6">
+          <!-- Balance Card -->
+          <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+            <div class="flex justify-between items-end mb-4">
+              <div>
+                <p class="text-[10px] uppercase font-black text-slate-400 mb-1 tracking-widest">Available Balance</p>
+                <h2 id="dailySafe" class="text-3xl font-black">₹0</h2>
+              </div>
+              <div class="text-right">
+                <p id="daysLeft" class="text-[10px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md">0 Days Left</p>
+              </div>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between text-[10px] font-bold text-slate-500">
+                <span id="budgetText">Spent ₹0 / ₹0</span>
+                <span id="budgetPercent">0%</span>
+              </div>
+              <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                <div id="budgetBar" class="h-full bg-indigo-500 transition-all duration-1000" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Stats -->
+          <div class="grid grid-cols-3 gap-3">
+            <div class="bg-white p-4 rounded-2xl border border-slate-100 text-center">
+              <p class="text-[9px] font-bold text-green-500 uppercase mb-1">Income</p>
+              <p id="totalIncome" class="text-sm font-black text-slate-800">₹0</p>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-100 text-center">
+              <p class="text-[9px] font-bold text-red-500 uppercase mb-1">Expense</p>
+              <p id="totalExpense" class="text-sm font-black text-slate-800">₹0</p>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-100 text-center">
+              <p class="text-[9px] font-bold text-indigo-500 uppercase mb-1">Invest</p>
+              <p id="totalInvest" class="text-sm font-black text-slate-800">₹0</p>
+            </div>
+          </div>
+
+          <!-- Analytics -->
+          <div id="chartContainer" class="bg-white p-5 rounded-3xl border border-slate-100">
+            <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Expense Breakdown</h3>
+            <div id="chartExpense" class="w-full h-48 flex items-center justify-center text-slate-300 italic text-sm">Loading Chart...</div>
+          </div>
+
+          <!-- History -->
+          <div>
+            <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 px-1">Activity Log</h3>
+            <div id="history" class="space-y-3"></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- REMINDERS VIEW -->
+      <main id="view-reminders" class="hidden scroll-container">
+        <div class="p-5 space-y-4">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Reminders</h3>
+            <button onclick="openRemModal()" class="text-xs font-bold text-indigo-600">+ Setup New</button>
+          </div>
+          <div id="remindersMainList" class="space-y-4"></div>
+        </div>
+      </main>
+    </div>
+
+    <!-- FAB -->
+    <button id="mainFab" onclick="openModal()" class="fixed bottom-8 right-6 w-14 h-14 bg-slate-900 text-white rounded-2xl shadow-2xl flex items-center justify-center text-2xl z-40 active:scale-90 transition-transform">
+      +
+    </button>
+  </div>
+
+  <!-- ENTRY MODAL -->
+  <div id="modal" class="hidden modal-overlay" onclick="if(event.target.id==='modal') closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-8"></div>
+      <div class="flex bg-slate-100 p-1.5 rounded-2xl mb-8">
+        <button id="btnDebit" onclick="setType('Debit')" class="flex-1 py-3 rounded-xl text-sm font-black bg-white text-red-600 shadow-sm transition-all">Expense</button>
+        <button id="btnCredit" onclick="setType('Credit')" class="flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 transition-all">Income</button>
+        <button id="btnInvestment" onclick="setType('Investment')" class="flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 transition-all">Invest</button>
+      </div>
+      
+      <div class="space-y-6">
+        <div class="relative">
+          <span class="absolute left-0 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-300">₹</span>
+          <input id="amount" type="number" inputmode="decimal" placeholder="0.00" class="w-full pl-8 text-5xl font-black outline-none bg-transparent">
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+            <label class="text-[9px] font-black uppercase text-slate-400 block mb-1">Category</label>
+            <select id="tag" class="w-full bg-transparent font-bold outline-none text-sm appearance-none">
+              <!-- Populated by setType -->
+            </select>
+          </div>
+          <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+            <label class="text-[9px] font-black uppercase text-slate-400 block mb-1">Date</label>
+            <input id="date" type="date" class="w-full bg-transparent font-bold outline-none text-sm">
+          </div>
+        </div>
+
+        <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+          <label class="text-[9px] font-black uppercase text-slate-400 block mb-1">Memo</label>
+          <input id="note" type="text" placeholder="Add details..." class="w-full bg-transparent font-bold outline-none text-sm">
+        </div>
+
+        <button onclick="save()" class="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-transform">Save Record</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REMINDER MODAL -->
+  <div id="remModal" class="hidden fixed inset-0 bg-slate-900/80 z-[200] flex items-center justify-center p-6 backdrop-blur-sm">
+    <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+      <h2 class="text-xl font-bold mb-6">New Reminder</h2>
+      <div class="space-y-4">
+        <input id="remName" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Name (e.g. Electricity)">
+        <input id="remAmount" type="number" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Amount ₹">
+        <div class="grid grid-cols-2 gap-3">
+          <input id="remDay" type="number" class="p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Day (1-31)">
+          <select id="remFreq" class="p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm">
+            <option>Monthly</option><option>Bi-Monthly</option><option>Yearly</option>
+          </select>
+        </div>
+        <select id="remTag" class="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm">
+          <option>Bills</option><option>Sub</option><option>SIP</option><option>Rent</option>
+        </select>
+        <select id="remType" class="w-full p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm">
+          <option value="Debit">Expense</option><option value="Investment">Investment</option>
+        </select>
+        <div class="flex gap-3 pt-2">
+          <button onclick="saveReminder()" class="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold">Add</button>
+          <button onclick="closeRemModal()" class="px-6 bg-slate-100 text-slate-500 rounded-2xl font-bold">✕</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOADER -->
+  <div id="loader-overlay" class="hidden fixed inset-0 bg-white/70 z-[1100] flex items-center justify-center">
+    <div class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+  </div>
+
+  <script>
+    google.charts.load("current", { packages: ["corechart"] });
+    let currentPin = "";
+    let currentType = "Debit";
+    const APP_PIN = "1234";
+    const fmt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
+
+    const TAGS = {
+      Debit: ["Food", "Transport", "Rent", "Shopping", "Bills", "Health", "Leisure", "Misc"],
+      Credit: ["Salary", "Freelance", "Gift", "Interest", "Incentive"],
+      Investment: ["Stocks", "Mutual Funds", "Gold", "Crypto", "FD/PPF"]
+    };
+
+    window.onload = () => {
+      initPeriodDropdown();
+      const nums = [1,2,3,4,5,6,7,8,9, 'C', 0, 'DEL'];
+      const pad = document.getElementById('numpad-grid');
+      nums.forEach(n => {
+        const btn = document.createElement('button');
+        btn.className = "w-16 h-16 rounded-full bg-slate-800 text-white text-2xl font-black active:bg-indigo-600 transition-colors";
+        btn.innerText = n;
+        btn.onclick = () => pressPin(n);
+        pad.appendChild(btn);
+      });
+      document.getElementById("date").valueAsDate = new Date();
+      setType('Debit');
+    }
+
+    function initPeriodDropdown() {
+      const sel = document.getElementById("periodFilter");
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const now = new Date();
+      for (let i = -4; i <= 2; i++) {
+        let d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        let opt = document.createElement("option");
+        opt.value = `${d.getMonth()}-${d.getFullYear()}`;
+        opt.innerText = `${months[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`;
+        if (i === 0) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
+    function pressPin(val) {
+      if (val === 'C') currentPin = ""; 
+      else if (val === 'DEL') currentPin = currentPin.slice(0,-1); 
+      else if (currentPin.length < 4) currentPin += val;
+
+      for (let i=1; i<=4; i++) {
+        document.getElementById('dot-'+i).className = i <= currentPin.length 
+          ? "pin-dot w-4 h-4 rounded-full bg-indigo-500 border-indigo-500" 
+          : "pin-dot w-4 h-4 rounded-full border-2 border-slate-600";
+      }
+
+      if (currentPin === APP_PIN) { 
+        document.getElementById('pin-screen').classList.add('hidden'); 
+        document.getElementById('app-content').classList.remove('hidden'); 
+        load(); 
+      } else if (currentPin.length === 4) { 
+        currentPin = ""; 
+        setTimeout(() => pressPin('C'), 250); 
+      }
+    }
+
+    function switchTab(tab) {
+      document.getElementById('view-dashboard').classList.toggle('hidden', tab !== 'dashboard');
+      document.getElementById('view-reminders').classList.toggle('hidden', tab !== 'reminders');
+      document.getElementById('tab-dashboard').className = `pb-2 text-sm font-bold ${tab === 'dashboard' ? 'tab-active' : 'text-slate-400'}`;
+      document.getElementById('tab-reminders').className = `pb-2 text-sm font-bold ${tab === 'reminders' ? 'tab-active' : 'text-slate-400'}`;
+      document.getElementById('mainFab').classList.toggle('hidden', tab === 'reminders');
+    }
+
+    function load() {
+      const filter = document.getElementById("periodFilter").value;
+      const [m, y] = filter.split("-");
+      document.getElementById("loader-overlay").classList.remove("hidden");
+      google.script.run.withSuccessHandler(render).getSummaryData("", m, y);
+      google.script.run.withSuccessHandler(renderReminders).getReminders();
+    }
+
+    function render(data) {
+      const spent = data.expense || 0;
+      const budget = data.budget || 20000;
+      const percent = Math.min((spent / budget) * 100, 100);
+    
+      document.getElementById("dailySafe").innerText = fmt.format(data.balance || 0);
+      document.getElementById("daysLeft").innerText = (data.daysLeft || 0) + " Days Left";
+      document.getElementById("budgetPercent").innerText = Math.round(percent) + "%";
+      document.getElementById("budgetBar").style.width = percent + "%";
+      document.getElementById("budgetText").innerText = `Spent ${fmt.format(spent)} / ${fmt.format(budget)}`;
+      document.getElementById("totalIncome").innerText = fmt.format(data.income || 0);
+      document.getElementById("totalExpense").innerText = fmt.format(data.expense || 0);
+      document.getElementById("totalInvest").innerText = fmt.format(data.investment || 0);
+
+      if (Object.keys(data.expenseTags || {}).length > 0) {
+        drawChart(data.expenseTags);
+      } else {
+        document.getElementById('chartExpense').innerHTML = "No data for this period";
+      }
+      renderHistory(data.history || []);
+      document.getElementById("loader-overlay").classList.add("hidden");
+    }
+
+    function drawChart(tags) {
+      const dataTable = [['Category', 'Amount']];
+      for (let tag in tags) dataTable.push([tag, tags[tag]]);
+      const chart = new google.visualization.PieChart(document.getElementById('chartExpense'));
+      chart.draw(google.visualization.arrayToDataTable(dataTable), {
+        pieHole: 0.6, 
+        colors: ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'],
+        chartArea: {width: '100%', height: '85%'}, 
+        legend: {position: 'right', textStyle: {fontSize: 10, fontName: 'system-ui', bold: true}}, 
+        backgroundColor: 'transparent',
+        pieSliceText: 'none'
+      });
+    }
+
+    function renderHistory(list) {
+      document.getElementById("history").innerHTML = list.length ? list.map(item => `
+        <div class="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-50 shadow-sm active:bg-slate-50 transition-colors">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${item.type === 'Credit' ? 'bg-green-50 text-green-600' : item.type === 'Investment' ? 'bg-indigo-50 text-indigo-600' : 'bg-red-50 text-red-600'}">
+              ${item.tag.charAt(0)}
+            </div>
+            <div>
+              <p class="font-black text-sm text-slate-800">${item.tag}</p>
+              <p class="text-[9px] text-slate-400 font-bold uppercase">${item.date} ${item.note ? '· '+item.note : ''}</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <p class="font-black text-sm ${item.type === 'Credit' ? 'text-green-600' : item.type === 'Investment' ? 'text-indigo-600' : 'text-red-600'}">
+              ${item.type === 'Debit' ? '-' : ''}${fmt.format(item.amount).replace('₹','')}
+            </p>
+            <button onclick="del('${item.id}')" class="text-[9px] text-slate-300 font-bold uppercase hover:text-red-500">Delete</button>
+          </div>
+        </div>
+      `).join('') : "<div class='text-center py-10 text-slate-300 italic text-sm font-bold'>No transactions found</div>";
+    }
+
+    function renderReminders(list) {
+      const el = document.getElementById("remindersMainList");
+      if(!list.length) { el.innerHTML = "<div class='text-center py-20 text-slate-400 font-bold italic text-sm'>No active reminders</div>"; return; }
+      el.innerHTML = list.map(r => `
+        <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center active:bg-slate-50">
+          <div>
+            <p class="text-[10px] font-black text-indigo-400 uppercase mb-1">${r.frequency} · Day ${r.day}</p>
+            <h4 class="font-black text-slate-800">${r.name}</h4>
+            <p class="text-lg font-black text-slate-900 mt-1">${fmt.format(r.amount)}</p>
+          </div>
+          <button onclick="payRem('${encodeURIComponent(JSON.stringify(r))}')" class="bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-xs uppercase shadow-lg active:scale-95 transition-transform">Pay</button>
+        </div>
+      `).join('');
+    }
+
+    function payRem(data) {
+      document.getElementById("loader-overlay").classList.remove("hidden");
+      google.script.run.withSuccessHandler(load).payReminder(data);
+    }
+
+    function setType(t) {
+      currentType = t;
+      ['btnDebit','btnCredit','btnInvestment'].forEach(id => {
+        const btn = document.getElementById(id);
+        btn.className = "flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 transition-all";
+      });
+      const active = document.getElementById('btn'+t);
+      active.className = `flex-1 py-3 rounded-xl text-sm font-black bg-white shadow-sm transition-all ${t === 'Credit' ? 'text-green-600' : t === 'Investment' ? 'text-indigo-600' : 'text-red-600'}`;
+      
+      const tagSel = document.getElementById("tag");
+      tagSel.innerHTML = TAGS[t].map(tag => `<option value="${tag}">${tag}</option>`).join('');
+    }
+
+    function save() {
+      const amt = document.getElementById("amount").value;
+      if(!amt || amt <= 0) return;
+      document.getElementById("loader-overlay").classList.remove("hidden");
+      google.script.run.withSuccessHandler(() => { closeModal(); load(); }).addTransaction({
+        amount: amt, 
+        date: document.getElementById("date").value, 
+        tag: document.getElementById("tag").value, 
+        note: document.getElementById("note").value,
+        type: currentType
+      });
+    }
+
+    function saveReminder() {
+      const name = document.getElementById("remName").value;
+      const amt = document.getElementById("remAmount").value;
+      if(!name || !amt) return;
+      document.getElementById("loader-overlay").classList.remove("hidden");
+      google.script.run.withSuccessHandler(() => { closeRemModal(); load(); }).addReminder({
+        name, 
+        amount: amt, 
+        day: document.getElementById("remDay").value,
+        frequency: document.getElementById("remFreq").value, 
+        tag: document.getElementById("remTag").value, 
+        type: document.getElementById("remType").value
+      });
+    }
+
+    function openModal() { 
+      document.getElementById("modal").classList.remove("hidden"); 
+      document.body.classList.add('modal-open'); 
+      document.getElementById("amount").focus();
+    }
+    function closeModal() { 
+      document.getElementById("modal").classList.add("hidden"); 
+      document.body.classList.remove('modal-open'); 
+      document.getElementById("amount").value = "";
+      document.getElementById("note").value = "";
+    }
+    function openRemModal() { document.getElementById("remModal").classList.remove("hidden"); }
+    function closeRemModal() { document.getElementById("remModal").classList.add("hidden"); }
+    
+    function editBudget() { 
+      const n = prompt("Target Monthly Expense (₹):"); 
+      if(n) google.script.run.withSuccessHandler(load).setBudget(n); 
+    }
+    
+    function del(id) { 
+      if(confirm("Delete record?")) google.script.run.withSuccessHandler(load).deleteTransaction(id); 
+    }
+  </script>
+</body>
+</html>

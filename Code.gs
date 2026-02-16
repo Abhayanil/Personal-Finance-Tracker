@@ -1,6 +1,7 @@
 /**
  * PocketTrack Backend
- * Optimized for Public Repo: Uses active sheet context and automated setup.
+ * Personal Finance Tracker for Google Sheets
+ * Optimized for mobile use and public deployment
  */
 
 const SETTINGS_SHEET = 'Settings';
@@ -25,11 +26,19 @@ function doGet() {
 function setupInitialSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // Define required sheets and their headers
   const sheets = [
-    { name: TRANS_SHEET, headers: [['ID', 'Date', 'Amount', 'Type', 'Tag', 'Note', 'Timestamp']] },
-    { name: REM_SHEET, headers: [['ID', 'Name', 'Amount', 'Day', 'Frequency', 'Tag', 'Type']] },
-    { name: SETTINGS_SHEET, headers: [['Key', 'Value'], ['Budget', '20000'], ['PIN', '1234']] }
+    { 
+      name: TRANS_SHEET, 
+      headers: [['ID', 'Date', 'Amount', 'Note', 'Tag', 'Type']]  // Changed order
+    },
+    { 
+      name: REM_SHEET, 
+      headers: [['ID', 'Name', 'Amount', 'Day', 'Frequency', 'Tag', 'Type']] 
+    },
+    { 
+      name: SETTINGS_SHEET, 
+      headers: [['Key', 'Value'], ['Budget', '20000'], ['PIN', '1234']] 
+    }
   ];
 
   sheets.forEach(s => {
@@ -38,6 +47,7 @@ function setupInitialSheets() {
       sheet = ss.insertSheet(s.name);
       sheet.getRange(1, 1, s.headers.length, s.headers[0].length).setValues(s.headers);
       sheet.getRange(1, 1, 1, s.headers[0].length).setFontWeight('bold').setBackground('#f1f5f9');
+      sheet.setFrozenRows(1);
     }
   });
   
@@ -50,7 +60,10 @@ function setupInitialSheets() {
 function getSummaryData(search = "", month = null, year = null) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(TRANS_SHEET);
-  const settings = ss.getSheetByName(SETTINGS_SHEET);
+  
+  if (!sheet) {
+    throw new Error("Transactions sheet not found. Please run setupInitialSheets() first.");
+  }
   
   const data = sheet.getDataRange().getValues();
   const headers = data.shift();
@@ -59,9 +72,10 @@ function getSummaryData(search = "", month = null, year = null) {
   const targetMonth = month !== null ? parseInt(month) : now.getMonth();
   const targetYear = year !== null ? parseInt(year) : now.getFullYear();
   
-  // Calculate days left in the selected month
   const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-  const daysLeft = targetMonth === now.getMonth() ? Math.max(0, lastDay - now.getDate()) : 0;
+  const daysLeft = targetMonth === now.getMonth() && targetYear === now.getFullYear() 
+    ? Math.max(0, lastDay - now.getDate()) 
+    : 0;
 
   let summary = {
     balance: 0,
@@ -74,12 +88,14 @@ function getSummaryData(search = "", month = null, year = null) {
     daysLeft: daysLeft
   };
 
+  // YOUR SHEET STRUCTURE: ID, Date, Amount, Note, Tag, Type
   data.forEach(row => {
-    const d = new Date(row[1]);
+    const d = new Date(row[1]);  // Date at index 1
     if (d.getMonth() === targetMonth && d.getFullYear() === targetYear) {
-      const amt = parseFloat(row[2]);
-      const type = row[3];
-      const tag = row[4];
+      const amt = parseFloat(row[2]);  // Amount at index 2
+      const note = row[3];              // Note at index 3
+      const tag = row[4];               // Tag at index 4
+      const type = row[5];              // Type at index 5
 
       if (type === 'Credit') {
         summary.income += amt;
@@ -99,7 +115,7 @@ function getSummaryData(search = "", month = null, year = null) {
         amount: amt,
         type: type,
         tag: tag,
-        note: row[5]
+        note: note
       });
     }
   });
@@ -108,14 +124,38 @@ function getSummaryData(search = "", month = null, year = null) {
 }
 
 /**
- * Saves a new transaction.
+ * Saves a new transaction with validation.
  */
 function addTransaction(tx) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(TRANS_SHEET);
+  
+  if (!sheet) throw new Error("Transactions sheet not found.");
+  
+  if (!tx.amount || parseFloat(tx.amount) <= 0) {
+    throw new Error("Amount must be greater than 0");
+  }
+  
+  if (!tx.type || !['Credit', 'Debit', 'Investment'].includes(tx.type)) {
+    throw new Error("Invalid transaction type");
+  }
+  
+  if (!tx.date) throw new Error("Date is required");
+  if (!tx.tag) throw new Error("Category/Tag is required");
+  
   const id = "TX" + Date.now();
-  sheet.appendRow([id, tx.date, tx.amount, tx.type, tx.tag, tx.note, new Date()]);
-  return true;
+  
+  // YOUR SHEET STRUCTURE: ID, Date, Amount, Note, Tag, Type
+  sheet.appendRow([
+    id,                    // ID
+    tx.date,              // Date
+    parseFloat(tx.amount), // Amount
+    tx.note || '',        // Note
+    tx.tag,               // Tag
+    tx.type               // Type
+  ]);
+  
+  return { success: true, id: id };
 }
 
 /**
@@ -125,12 +165,15 @@ function deleteTransaction(id) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(TRANS_SHEET);
   const data = sheet.getDataRange().getValues();
+  
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === id) {
       sheet.deleteRow(i + 1);
-      break;
+      return { success: true };
     }
   }
+  
+  throw new Error("Transaction not found");
 }
 
 /**
@@ -139,22 +182,107 @@ function deleteTransaction(id) {
 function getReminders() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(REM_SHEET);
+  
   if (!sheet) return [];
+  
   const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  
   data.shift();
+  
   return data.map(r => ({
-    id: r[0], name: r[1], amount: r[2], day: r[3], frequency: r[4], tag: r[5], type: r[6]
+    id: r[0], 
+    name: r[1], 
+    amount: r[2], 
+    day: r[3], 
+    frequency: r[4], 
+    tag: r[5], 
+    type: r[6]
   }));
 }
 
 /**
- * Saves a new reminder.
+ * Saves a new reminder with validation.
  */
 function addReminder(r) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(REM_SHEET);
+  
+  if (!sheet) throw new Error("Reminders sheet not found.");
+  
+  if (!r.name || r.name.trim() === '') {
+    throw new Error("Reminder name is required");
+  }
+  
+  if (!r.amount || parseFloat(r.amount) <= 0) {
+    throw new Error("Amount must be greater than 0");
+  }
+  
+  const day = parseInt(r.day);
+  if (!day || day < 1 || day > 31) {
+    throw new Error("Day must be between 1 and 31");
+  }
+  
+  if (!r.frequency) throw new Error("Frequency is required");
+  
+  if (!r.type || !['Debit', 'Investment'].includes(r.type)) {
+    throw new Error("Invalid reminder type");
+  }
+  
   const id = "RM" + Date.now();
-  sheet.appendRow([id, r.name, r.amount, r.day, r.frequency, r.tag, r.type]);
+  
+  sheet.appendRow([
+    id, 
+    r.name.trim(), 
+    parseFloat(r.amount), 
+    day, 
+    r.frequency, 
+    r.tag || 'Bills', 
+    r.type
+  ]);
+  
+  return { success: true, id: id };
+}
+
+/**
+ * Deletes a reminder by ID.
+ */
+function deleteReminder(id) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(REM_SHEET);
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === id) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  
+  throw new Error("Reminder not found");
+}
+
+/**
+ * Pays a reminder by creating a transaction from it.
+ */
+function payReminder(reminderData) {
+  try {
+    const reminder = JSON.parse(decodeURIComponent(reminderData));
+    
+    const transaction = {
+      amount: reminder.amount,
+      date: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"),
+      type: reminder.type,
+      tag: reminder.tag,
+      note: `Paid: ${reminder.name} (Reminder)`
+    };
+    
+    addTransaction(transaction);
+    
+    return { success: true, message: "Payment recorded successfully" };
+  } catch (e) {
+    throw new Error("Failed to process payment: " + e.message);
+  }
 }
 
 /**
@@ -163,23 +291,71 @@ function addReminder(r) {
 function getSetting(key, defaultVal) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SETTINGS_SHEET);
+  
+  if (!sheet) return defaultVal;
+  
   const data = sheet.getDataRange().getValues();
   const found = data.find(r => r[0] === key);
   return found ? found[1] : defaultVal;
 }
 
 /**
+ * Updates a setting value.
+ */
+function setSetting(key, value) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SETTINGS_SHEET);
+  
+  if (!sheet) throw new Error("Settings sheet not found.");
+  
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      return { success: true };
+    }
+  }
+  
+  sheet.appendRow([key, value]);
+  return { success: true };
+}
+
+/**
  * Updates budget setting.
  */
 function setBudget(val) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SETTINGS_SHEET);
-  const data = sheet.getDataRange().getValues();
-  for (let i = 0; i < data.length; i++) {
-    if (data[i][0] === 'Budget') {
-      sheet.getRange(i + 1, 2).setValue(val);
-      return;
-    }
+  const budget = parseFloat(val);
+  
+  if (isNaN(budget) || budget <= 0) {
+    throw new Error("Budget must be a positive number");
   }
-  sheet.appendRow(['Budget', val]);
+  
+  return setSetting('Budget', budget);
+}
+
+/**
+ * Updates PIN setting.
+ */
+function setPIN(newPin) {
+  if (!/^\d{4}$/.test(newPin)) {
+    throw new Error("PIN must be exactly 4 digits");
+  }
+  
+  return setSetting('PIN', newPin);
+}
+
+/**
+ * Verifies PIN for login.
+ */
+function verifyPIN(pin) {
+  const storedPin = getSetting('PIN', '1234');
+  return pin === String(storedPin);
+}
+
+/**
+ * Gets current PIN (for frontend initialization).
+ */
+function getCurrentPIN() {
+  return getSetting('PIN', '1234');
 }

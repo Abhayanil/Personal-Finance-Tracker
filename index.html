@@ -10,17 +10,25 @@
   <style>
     :root { --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom); }
     html, body { margin: 0; padding: 0; height: 100%; background-color: #f8fafc; overflow: hidden; }
-    body { font-family: -apple-system, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; display: flex; flex-direction: column; }
+    body { 
+      font-family: -apple-system, system-ui, sans-serif; 
+      -webkit-tap-highlight-color: transparent; 
+      overscroll-behavior-y: none; 
+      display: flex; 
+      flex-direction: column; 
+    }
     
     #app-viewport { display: flex; flex-direction: column; height: 100vh; width: 100%; position: relative; }
     
-    /* Smooth Scroll Container */
+    /* Smooth Scroll Container - Optimized for performance */
     .scroll-container { 
       flex: 1 1 auto; 
       overflow-y: auto; 
+      overflow-x: hidden;
       -webkit-overflow-scrolling: touch; 
       padding-bottom: calc(100px + var(--sab)); 
-      touch-action: pan-y; 
+      touch-action: pan-y;
+      will-change: scroll-position;
     }
     
     body.modal-open { overflow: hidden; }
@@ -36,7 +44,7 @@
       border-bottom: 1px solid #f1f5f9;
     }
 
-    /* Modal Styling */
+    /* Modal Styling - Hardware accelerated */
     .modal-overlay { 
       position: fixed; 
       inset: 0; 
@@ -45,23 +53,75 @@
       flex-direction: column; 
       justify-content: flex-end; 
       background-color: rgba(15, 23, 42, 0.6); 
-      backdrop-filter: blur(4px); 
+      backdrop-filter: blur(4px);
+      animation: fadeIn 0.2s ease;
     }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+    
     .modal-content { 
       max-height: 90vh; 
       overflow-y: auto; 
       background: white; 
       border-radius: 2.5rem 2.5rem 0 0; 
-      padding: 1.5rem 1.5rem calc(2rem + var(--sab)) 1.5rem; 
+      padding: 1.5rem 1.5rem calc(2rem + var(--sab)) 1.5rem;
+      animation: slideUp 0.3s ease;
+      will-change: transform;
     }
 
     /* PIN Dot animations */
-    .pin-dot { transition: all 0.2s ease; }
-    .pin-dot.active { background-color: #f8fafc; border-color: #6366f1; transform: scale(1.1); }
+    .pin-dot { 
+      transition: all 0.15s ease;
+      will-change: transform, background-color;
+    }
+    .pin-dot.active { 
+      background-color: #6366f1; 
+      border-color: #6366f1; 
+      transform: scale(1.15); 
+    }
+    
+    /* Optimized button transitions */
+    .btn-transition {
+      transition: transform 0.1s ease, background-color 0.15s ease;
+      will-change: transform;
+    }
+    
+    .btn-transition:active {
+      transform: scale(0.95);
+    }
+    
+    /* Loader */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* Settings Modal */
+    .settings-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(4px);
+      padding: 1.5rem;
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
-
   <!-- SECURITY LAYER -->
   <div id="pin-screen" class="fixed inset-0 bg-slate-900 z-[1000] flex flex-col items-center justify-center p-10 text-white">
     <h2 class="text-xl font-bold mb-8 text-slate-300 tracking-tight">Finance Lock</h2>
@@ -72,6 +132,7 @@
       <div id="dot-4" class="pin-dot w-4 h-4 rounded-full border-2 border-slate-600"></div>
     </div>
     <div id="numpad-grid" class="grid grid-cols-3 gap-6"></div>
+    <p class="text-xs text-slate-500 mt-8 text-center">Default PIN: 1234<br>Change it in Settings after login</p>
   </div>
 
   <!-- MAIN APP VIEWPORT -->
@@ -83,7 +144,7 @@
           <select id="periodFilter" onchange="load()" class="text-[10px] font-black uppercase text-slate-500 bg-slate-100 px-2 py-1.5 rounded-lg border-none outline-none">
             <!-- Populated via JS -->
           </select>
-          <button onclick="editBudget()" class="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg">Budget ₹</button>
+          <button onclick="openSettings()" class="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg btn-transition">⚙️</button>
         </div>
       </div>
       <div class="flex gap-6 mt-2">
@@ -91,7 +152,6 @@
         <button onclick="switchTab('reminders')" id="tab-reminders" class="pb-2 text-sm font-bold text-slate-400">Reminders</button>
       </div>
     </header>
-
     <div id="app-content" class="hidden flex-1 flex flex-col min-h-0">
       <!-- DASHBOARD VIEW -->
       <main id="view-dashboard" class="scroll-container">
@@ -113,7 +173,7 @@
                 <span id="budgetPercent">0%</span>
               </div>
               <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div id="budgetBar" class="h-full bg-indigo-500 transition-all duration-1000" style="width: 0%"></div>
+                <div id="budgetBar" class="h-full bg-indigo-500 transition-all duration-500" style="width: 0%"></div>
               </div>
             </div>
           </div>
@@ -137,7 +197,7 @@
           <!-- Analytics -->
           <div id="chartContainer" class="bg-white p-5 rounded-3xl border border-slate-100">
             <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Expense Breakdown</h3>
-            <div id="chartExpense" class="w-full h-48 flex items-center justify-center text-slate-300 italic text-sm">Loading Chart...</div>
+            <div id="chartExpense" class="w-full h-64 flex items-center justify-center text-slate-300 italic text-sm">Loading Chart...</div>
           </div>
 
           <!-- History -->
@@ -153,7 +213,7 @@
         <div class="p-5 space-y-4">
           <div class="flex justify-between items-center mb-2">
             <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest">Reminders</h3>
-            <button onclick="openRemModal()" class="text-xs font-bold text-indigo-600">+ Setup New</button>
+            <button onclick="openRemModal()" class="text-xs font-bold text-indigo-600 btn-transition">+ Setup New</button>
           </div>
           <div id="remindersMainList" class="space-y-4"></div>
         </div>
@@ -161,11 +221,10 @@
     </div>
 
     <!-- FAB -->
-    <button id="mainFab" onclick="openModal()" class="fixed bottom-8 right-6 w-14 h-14 bg-slate-900 text-white rounded-2xl shadow-2xl flex items-center justify-center text-2xl z-40 active:scale-90 transition-transform">
+    <button id="mainFab" onclick="openModal()" class="fixed bottom-8 right-6 w-14 h-14 bg-slate-900 text-white rounded-2xl shadow-2xl flex items-center justify-center text-2xl z-40 btn-transition">
       +
     </button>
   </div>
-
   <!-- ENTRY MODAL -->
   <div id="modal" class="hidden modal-overlay" onclick="if(event.target.id==='modal') closeModal()">
     <div class="modal-content" onclick="event.stopPropagation()">
@@ -200,7 +259,7 @@
           <input id="note" type="text" placeholder="Add details..." class="w-full bg-transparent font-bold outline-none text-sm">
         </div>
 
-        <button onclick="save()" class="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-transform">Save Record</button>
+        <button onclick="save()" class="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl btn-transition">Save Record</button>
       </div>
     </div>
   </div>
@@ -211,9 +270,9 @@
       <h2 class="text-xl font-bold mb-6">New Reminder</h2>
       <div class="space-y-4">
         <input id="remName" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Name (e.g. Electricity)">
-        <input id="remAmount" type="number" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Amount ₹">
+        <input id="remAmount" type="number" inputmode="decimal" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Amount ₹">
         <div class="grid grid-cols-2 gap-3">
-          <input id="remDay" type="number" class="p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Day (1-31)">
+          <input id="remDay" type="number" inputmode="numeric" class="p-4 bg-slate-50 rounded-2xl outline-none text-sm" placeholder="Day (1-31)" min="1" max="31">
           <select id="remFreq" class="p-4 bg-slate-50 rounded-2xl outline-none font-bold text-sm">
             <option>Monthly</option><option>Bi-Monthly</option><option>Yearly</option>
           </select>
@@ -225,8 +284,30 @@
           <option value="Debit">Expense</option><option value="Investment">Investment</option>
         </select>
         <div class="flex gap-3 pt-2">
-          <button onclick="saveReminder()" class="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold">Add</button>
-          <button onclick="closeRemModal()" class="px-6 bg-slate-100 text-slate-500 rounded-2xl font-bold">✕</button>
+          <button onclick="saveReminder()" class="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold btn-transition">Add</button>
+          <button onclick="closeRemModal()" class="px-6 bg-slate-100 text-slate-500 rounded-2xl font-bold btn-transition">✕</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settingsModal" class="hidden settings-modal">
+    <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+      <h2 class="text-xl font-bold mb-6">Settings</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="text-xs font-bold text-slate-500 uppercase mb-2 block">Monthly Budget (₹)</label>
+          <input id="settingBudget" type="number" inputmode="decimal" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-bold" placeholder="20000">
+        </div>
+        <div>
+          <label class="text-xs font-bold text-slate-500 uppercase mb-2 block">Change PIN (4 digits)</label>
+          <input id="settingPIN" type="password" inputmode="numeric" maxlength="4" class="w-full p-4 bg-slate-50 rounded-2xl outline-none text-sm font-bold" placeholder="****">
+          <p class="text-[10px] text-slate-400 mt-1 ml-1">Leave blank to keep current PIN</p>
+        </div>
+        <div class="flex gap-3 pt-2">
+          <button onclick="saveSettings()" class="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold btn-transition">Save</button>
+          <button onclick="closeSettings()" class="px-6 bg-slate-100 text-slate-500 rounded-2xl font-bold btn-transition">Cancel</button>
         </div>
       </div>
     </div>
@@ -234,14 +315,13 @@
 
   <!-- LOADER -->
   <div id="loader-overlay" class="hidden fixed inset-0 bg-white/70 z-[1100] flex items-center justify-center">
-    <div class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+    <div class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full spinner"></div>
   </div>
-
   <script>
     google.charts.load("current", { packages: ["corechart"] });
     let currentPin = "";
     let currentType = "Debit";
-    const APP_PIN = "1234";
+    let APP_PIN = "1234"; // Will be loaded from backend
     const fmt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
     const TAGS = {
@@ -252,17 +332,29 @@
 
     window.onload = () => {
       initPeriodDropdown();
+      initNumpad();
+      loadPINFromBackend();
+      document.getElementById("date").valueAsDate = new Date();
+      setType('Debit');
+    }
+
+    function loadPINFromBackend() {
+      google.script.run
+        .withSuccessHandler(pin => { APP_PIN = String(pin); })
+        .withFailureHandler(err => { console.error("Failed to load PIN:", err); })
+        .getCurrentPIN();
+    }
+
+    function initNumpad() {
       const nums = [1,2,3,4,5,6,7,8,9, 'C', 0, 'DEL'];
       const pad = document.getElementById('numpad-grid');
       nums.forEach(n => {
         const btn = document.createElement('button');
-        btn.className = "w-16 h-16 rounded-full bg-slate-800 text-white text-2xl font-black active:bg-indigo-600 transition-colors";
+        btn.className = "w-16 h-16 rounded-full bg-slate-800 text-white text-2xl font-black btn-transition";
         btn.innerText = n;
         btn.onclick = () => pressPin(n);
         pad.appendChild(btn);
       });
-      document.getElementById("date").valueAsDate = new Date();
-      setType('Debit');
     }
 
     function initPeriodDropdown() {
@@ -278,25 +370,33 @@
         sel.appendChild(opt);
       }
     }
-
     function pressPin(val) {
       if (val === 'C') currentPin = ""; 
       else if (val === 'DEL') currentPin = currentPin.slice(0,-1); 
       else if (currentPin.length < 4) currentPin += val;
 
       for (let i=1; i<=4; i++) {
-        document.getElementById('dot-'+i).className = i <= currentPin.length 
-          ? "pin-dot w-4 h-4 rounded-full bg-indigo-500 border-indigo-500" 
-          : "pin-dot w-4 h-4 rounded-full border-2 border-slate-600";
+        const dot = document.getElementById('dot-'+i);
+        if (i <= currentPin.length) {
+          dot.className = "pin-dot w-4 h-4 rounded-full bg-indigo-500 border-2 border-indigo-500 active";
+        } else {
+          dot.className = "pin-dot w-4 h-4 rounded-full border-2 border-slate-600";
+        }
       }
 
-      if (currentPin === APP_PIN) { 
-        document.getElementById('pin-screen').classList.add('hidden'); 
-        document.getElementById('app-content').classList.remove('hidden'); 
-        load(); 
-      } else if (currentPin.length === 4) { 
-        currentPin = ""; 
-        setTimeout(() => pressPin('C'), 250); 
+      if (currentPin.length === 4) {
+        if (currentPin === APP_PIN) { 
+          document.getElementById('pin-screen').classList.add('hidden'); 
+          document.getElementById('app-content').classList.remove('hidden'); 
+          load(); 
+        } else { 
+          currentPin = ""; 
+          setTimeout(() => {
+            for (let i=1; i<=4; i++) {
+              document.getElementById('dot-'+i).className = "pin-dot w-4 h-4 rounded-full border-2 border-slate-600";
+            }
+          }, 200); 
+        }
       }
     }
 
@@ -311,11 +411,17 @@
     function load() {
       const filter = document.getElementById("periodFilter").value;
       const [m, y] = filter.split("-");
-      document.getElementById("loader-overlay").classList.remove("hidden");
-      google.script.run.withSuccessHandler(render).getSummaryData("", m, y);
-      google.script.run.withSuccessHandler(renderReminders).getReminders();
+      showLoader();
+      google.script.run
+        .withSuccessHandler(data => { render(data); hideLoader(); })
+        .withFailureHandler(err => { showError(err.message); hideLoader(); })
+        .getSummaryData("", m, y);
+      
+      google.script.run
+        .withSuccessHandler(renderReminders)
+        .withFailureHandler(err => console.error("Failed to load reminders:", err))
+        .getReminders();
     }
-
     function render(data) {
       const spent = data.expense || 0;
       const budget = data.budget || 20000;
@@ -333,73 +439,119 @@
       if (Object.keys(data.expenseTags || {}).length > 0) {
         drawChart(data.expenseTags);
       } else {
-        document.getElementById('chartExpense').innerHTML = "No data for this period";
+        document.getElementById('chartExpense').innerHTML = "<div class='text-slate-400 font-bold italic text-sm'>No expenses this period</div>";
       }
       renderHistory(data.history || []);
-      document.getElementById("loader-overlay").classList.add("hidden");
     }
 
-    function drawChart(tags) {
-      const dataTable = [['Category', 'Amount']];
-      for (let tag in tags) dataTable.push([tag, tags[tag]]);
-      const chart = new google.visualization.PieChart(document.getElementById('chartExpense'));
-      chart.draw(google.visualization.arrayToDataTable(dataTable), {
-        pieHole: 0.6, 
-        colors: ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'],
-        chartArea: {width: '100%', height: '85%'}, 
-        legend: {position: 'right', textStyle: {fontSize: 10, fontName: 'system-ui', bold: true}}, 
-        backgroundColor: 'transparent',
-        pieSliceText: 'none'
-      });
-    }
+function drawChart(tags) {
+  const dataTable = [['Category', 'Amount']];
+  let total = 0;
+  for (let tag in tags) {
+    dataTable.push([tag, tags[tag]]);
+    total += tags[tag];
+  }
+  
+  const chart = new google.visualization.PieChart(document.getElementById('chartExpense'));
+  chart.draw(google.visualization.arrayToDataTable(dataTable), {
+    pieHole: 0.5, 
+    colors: ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6'],
+    chartArea: {width: '100%', height: '70%'}, 
+    legend: {
+      position: 'bottom',
+      alignment: 'center',
+      textStyle: { 
+        fontSize: 10, 
+        fontName: 'system-ui', 
+        bold: true 
+      },
+      maxLines: 3
+    },
+    backgroundColor: 'transparent',
+    pieSliceText: 'percentage',
+    pieSliceTextStyle: {
+      fontSize: 10,
+      bold: true,
+      color: 'white'
+    },
+    tooltip: {
+      text: 'both',
+      textStyle: { fontSize: 11 },
+      showColorCode: true
+    },
+    sliceVisibilityThreshold: 0.01
+  });
+}
 
     function renderHistory(list) {
-      document.getElementById("history").innerHTML = list.length ? list.map(item => `
-        <div class="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-50 shadow-sm active:bg-slate-50 transition-colors">
+      const historyEl = document.getElementById("history");
+      if (!list.length) {
+        historyEl.innerHTML = "<div class='text-center py-10 text-slate-300 italic text-sm font-bold'>No transactions found</div>";
+        return;
+      }
+      
+      historyEl.innerHTML = list.map(item => `
+        <div class="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-50 shadow-sm">
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${item.type === 'Credit' ? 'bg-green-50 text-green-600' : item.type === 'Investment' ? 'bg-indigo-50 text-indigo-600' : 'bg-red-50 text-red-600'}">
               ${item.tag.charAt(0)}
             </div>
             <div>
               <p class="font-black text-sm text-slate-800">${item.tag}</p>
-              <p class="text-[9px] text-slate-400 font-bold uppercase">${item.date} ${item.note ? '· '+item.note : ''}</p>
+              <p class="text-[9px] text-slate-400 font-bold uppercase">${item.date}${item.note ? ' · '+item.note : ''}</p>
             </div>
           </div>
           <div class="text-right">
             <p class="font-black text-sm ${item.type === 'Credit' ? 'text-green-600' : item.type === 'Investment' ? 'text-indigo-600' : 'text-red-600'}">
               ${item.type === 'Debit' ? '-' : ''}${fmt.format(item.amount).replace('₹','')}
             </p>
-            <button onclick="del('${item.id}')" class="text-[9px] text-slate-300 font-bold uppercase hover:text-red-500">Delete</button>
+            <button onclick="del('${item.id}')" class="text-[9px] text-slate-300 font-bold uppercase hover:text-red-500 btn-transition">Delete</button>
           </div>
-        </div>
-      `).join('') : "<div class='text-center py-10 text-slate-300 italic text-sm font-bold'>No transactions found</div>";
-    }
-
-    function renderReminders(list) {
-      const el = document.getElementById("remindersMainList");
-      if(!list.length) { el.innerHTML = "<div class='text-center py-20 text-slate-400 font-bold italic text-sm'>No active reminders</div>"; return; }
-      el.innerHTML = list.map(r => `
-        <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center active:bg-slate-50">
-          <div>
-            <p class="text-[10px] font-black text-indigo-400 uppercase mb-1">${r.frequency} · Day ${r.day}</p>
-            <h4 class="font-black text-slate-800">${r.name}</h4>
-            <p class="text-lg font-black text-slate-900 mt-1">${fmt.format(r.amount)}</p>
-          </div>
-          <button onclick="payRem('${encodeURIComponent(JSON.stringify(r))}')" class="bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-xs uppercase shadow-lg active:scale-95 transition-transform">Pay</button>
         </div>
       `).join('');
     }
 
+    function renderReminders(list) {
+      const el = document.getElementById("remindersMainList");
+      if(!list.length) { 
+        el.innerHTML = "<div class='text-center py-20 text-slate-400 font-bold italic text-sm'>No active reminders</div>"; 
+        return; 
+      }
+      el.innerHTML = list.map(r => `
+        <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+          <div class="flex justify-between items-start mb-3">
+            <div class="flex-1">
+              <p class="text-[10px] font-black text-indigo-400 uppercase mb-1">${r.frequency} · Day ${r.day}</p>
+              <h4 class="font-black text-slate-800">${r.name}</h4>
+              <p class="text-lg font-black text-slate-900 mt-1">${fmt.format(r.amount)}</p>
+            </div>
+            <button onclick="deleteRem('${r.id}')" class="text-slate-300 hover:text-red-500 text-xs font-bold btn-transition">✕</button>
+          </div>
+          <button onclick="payRem('${encodeURIComponent(JSON.stringify(r))}')" class="w-full bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-xs uppercase shadow-lg btn-transition">Pay Now</button>
+        </div>
+      `).join('');
+    }
     function payRem(data) {
-      document.getElementById("loader-overlay").classList.remove("hidden");
-      google.script.run.withSuccessHandler(load).payReminder(data);
+      showLoader();
+      google.script.run
+        .withSuccessHandler(() => { load(); showSuccess("Payment recorded!"); })
+        .withFailureHandler(err => { showError(err.message); hideLoader(); })
+        .payReminder(data);
+    }
+
+    function deleteRem(id) {
+      if(!confirm("Delete this reminder?")) return;
+      showLoader();
+      google.script.run
+        .withSuccessHandler(() => { load(); showSuccess("Reminder deleted"); })
+        .withFailureHandler(err => { showError(err.message); hideLoader(); })
+        .deleteReminder(id);
     }
 
     function setType(t) {
       currentType = t;
       ['btnDebit','btnCredit','btnInvestment'].forEach(id => {
-        const btn = document.getElementById(id);
-        btn.className = "flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 transition-all";
+        document.getElementById(id).className = "flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 transition-all";
       });
       const active = document.getElementById('btn'+t);
       active.className = `flex-1 py-3 rounded-xl text-sm font-black bg-white shadow-sm transition-all ${t === 'Credit' ? 'text-green-600' : t === 'Investment' ? 'text-indigo-600' : 'text-red-600'}`;
@@ -410,53 +562,150 @@
 
     function save() {
       const amt = document.getElementById("amount").value;
-      if(!amt || amt <= 0) return;
-      document.getElementById("loader-overlay").classList.remove("hidden");
-      google.script.run.withSuccessHandler(() => { closeModal(); load(); }).addTransaction({
-        amount: amt, 
-        date: document.getElementById("date").value, 
-        tag: document.getElementById("tag").value, 
-        note: document.getElementById("note").value,
-        type: currentType
-      });
+      if(!amt || amt <= 0) {
+        showError("Please enter a valid amount");
+        return;
+      }
+      
+      showLoader();
+      google.script.run
+        .withSuccessHandler(() => { closeModal(); load(); showSuccess("Transaction saved!"); })
+        .withFailureHandler(err => { showError(err.message); hideLoader(); })
+        .addTransaction({
+          amount: amt, 
+          date: document.getElementById("date").value, 
+          tag: document.getElementById("tag").value, 
+          note: document.getElementById("note").value,
+          type: currentType
+        });
     }
 
     function saveReminder() {
       const name = document.getElementById("remName").value;
       const amt = document.getElementById("remAmount").value;
-      if(!name || !amt) return;
-      document.getElementById("loader-overlay").classList.remove("hidden");
-      google.script.run.withSuccessHandler(() => { closeRemModal(); load(); }).addReminder({
-        name, 
-        amount: amt, 
-        day: document.getElementById("remDay").value,
-        frequency: document.getElementById("remFreq").value, 
-        tag: document.getElementById("remTag").value, 
-        type: document.getElementById("remType").value
-      });
+      const day = document.getElementById("remDay").value;
+      
+      if(!name || !amt || !day) {
+        showError("Please fill all required fields");
+        return;
+      }
+      
+      showLoader();
+      google.script.run
+        .withSuccessHandler(() => { closeRemModal(); load(); showSuccess("Reminder added!"); })
+        .withFailureHandler(err => { showError(err.message); hideLoader(); })
+        .addReminder({
+          name, 
+          amount: amt, 
+          day: day,
+          frequency: document.getElementById("remFreq").value, 
+          tag: document.getElementById("remTag").value, 
+          type: document.getElementById("remType").value
+        });
     }
-
     function openModal() { 
       document.getElementById("modal").classList.remove("hidden"); 
       document.body.classList.add('modal-open'); 
-      document.getElementById("amount").focus();
+      setTimeout(() => document.getElementById("amount").focus(), 300);
     }
+    
     function closeModal() { 
       document.getElementById("modal").classList.add("hidden"); 
       document.body.classList.remove('modal-open'); 
       document.getElementById("amount").value = "";
       document.getElementById("note").value = "";
     }
-    function openRemModal() { document.getElementById("remModal").classList.remove("hidden"); }
-    function closeRemModal() { document.getElementById("remModal").classList.add("hidden"); }
     
-    function editBudget() { 
-      const n = prompt("Target Monthly Expense (₹):"); 
-      if(n) google.script.run.withSuccessHandler(load).setBudget(n); 
+    function openRemModal() { 
+      document.getElementById("remModal").classList.remove("hidden"); 
+      document.body.classList.add('modal-open'); 
+    }
+    
+    function closeRemModal() { 
+      document.getElementById("remModal").classList.add("hidden"); 
+      document.body.classList.remove('modal-open'); 
+      document.getElementById("remName").value = "";
+      document.getElementById("remAmount").value = "";
+      document.getElementById("remDay").value = "";
+    }
+
+    function openSettings() {
+      google.script.run
+        .withSuccessHandler(budget => {
+          document.getElementById("settingBudget").value = budget;
+          document.getElementById("settingPIN").value = "";
+          document.getElementById("settingsModal").classList.remove("hidden");
+          document.body.classList.add('modal-open');
+        })
+        .withFailureHandler(err => showError("Failed to load settings"))
+        .getSetting('Budget', 20000);
+    }
+
+    function closeSettings() {
+      document.getElementById("settingsModal").classList.add("hidden");
+      document.body.classList.remove('modal-open');
+    }
+
+    function saveSettings() {
+      const budget = document.getElementById("settingBudget").value;
+      const pin = document.getElementById("settingPIN").value;
+      
+      if (!budget || budget <= 0) {
+        showError("Please enter a valid budget");
+        return;
+      }
+      
+      showLoader();
+      
+      google.script.run
+        .withSuccessHandler(() => {
+          if (pin && pin.length === 4) {
+            google.script.run
+              .withSuccessHandler(() => {
+                APP_PIN = pin;
+                closeSettings();
+                load();
+                showSuccess("Settings saved! PIN updated.");
+              })
+              .withFailureHandler(err => { showError(err.message); hideLoader(); })
+              .setPIN(pin);
+          } else {
+            closeSettings();
+            load();
+            showSuccess("Budget updated!");
+          }
+        })
+        .withFailureHandler(err => { showError(err.message); hideLoader(); })
+        .setBudget(budget);
     }
     
     function del(id) { 
-      if(confirm("Delete record?")) google.script.run.withSuccessHandler(load).deleteTransaction(id); 
+      if(!confirm("Delete this transaction?")) return;
+      showLoader();
+      google.script.run
+        .withSuccessHandler(() => { load(); showSuccess("Transaction deleted"); })
+        .withFailureHandler(err => { showError(err.message); hideLoader(); })
+        .deleteTransaction(id); 
+    }
+
+    function showLoader() {
+      document.getElementById("loader-overlay").classList.remove("hidden");
+    }
+
+    function hideLoader() {
+      document.getElementById("loader-overlay").classList.add("hidden");
+    }
+
+    function showError(msg) {
+      alert("❌ " + msg);
+    }
+
+    function showSuccess(msg) {
+      const feedback = document.createElement('div');
+      feedback.className = 'fixed top-20 left-1/2 -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl z-[1200]';
+      feedback.textContent = "✓ " + msg;
+      document.body.appendChild(feedback);
+      setTimeout(() => feedback.remove(), 2000);
     }
   </script>
 </body>
